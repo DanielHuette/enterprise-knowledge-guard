@@ -1,0 +1,90 @@
+# Enterprise Knowledge Guard
+#
+#   docker compose up --build        -> Oberflaeche auf http://localhost:8501
+#   docker compose run --rm tests    -> Testreihe gegen die laufende Datenbank
+#
+# Ohne jeden Schluessel lauffaehig: fehlt ein Zugang zu einem Sprachmodell,
+# antwortet das System belegbasiert. Die Rechtepruefung ist davon unberuehrt.
+
+name: knowledge-guard
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      # Diese Rolle besitzt die Tabellen und richtet ein -- nicht die, mit der
+      # der Dienst arbeitet.
+      POSTGRES_USER: kg_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:-kg_owner_pw}
+      POSTGRES_DB: knowledge_guard
+      KG_APP_USER: kg_app
+      KG_APP_PASSWORD: ${DB_APP_PASSWORD:-kg_app_pw}
+    volumes:
+      # Die Dateien in db/ laufen beim ersten Start in alphabetischer Reihenfolge.
+      - ./db:/docker-entrypoint-initdb.d:ro
+      - kg-data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kg_owner -d knowledge_guard"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    environment:
+      APP_DATABASE_URL: postgresql://kg_app:${DB_APP_PASSWORD:-kg_app_pw}@db:5432/knowledge_guard
+      OWNER_DATABASE_URL: postgresql://kg_owner:${DB_OWNER_PASSWORD:-kg_owner_pw}@db:5432/knowledge_guard
+      TOKEN_SECRET: ${TOKEN_SECRET:-nur-fuer-die-vorfuehrung-aendern}
+      SEED_ON_START: "true"
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-auto}
+      LLM_PROVIDER: ${LLM_PROVIDER:-auto}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      SHOW_BLOCKED_COUNT: ${SHOW_BLOCKED_COUNT:-true}
+      TOP_K: ${TOP_K:-5}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  ui:
+    build: ./ui
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${UI_PORT:-8501}:8501"
+    restart: unless-stopped
+
+  # Eigenes Profil: laeuft nicht beim normalen Start mit.
+  tests:
+    build: ./api
+    profiles: ["test"]
+    environment:
+      APP_DATABASE_URL: postgresql://kg_app:${DB_APP_PASSWORD:-kg_app_pw}@db:5432/knowledge_guard
+      OWNER_DATABASE_URL: postgresql://kg_owner:${DB_OWNER_PASSWORD:-kg_owner_pw}@db:5432/knowledge_guard
+      TOKEN_SECRET: ${TOKEN_SECRET:-nur-fuer-die-vorfuehrung-aendern}
+      SEED_ON_START: "false"
+      # Die Testreihe prueft Rechte, nicht Formulierungen -- sie laeuft
+      # absichtlich ohne Sprachmodell und damit ohne Kosten.
+      LLM_PROVIDER: none
+      EMBEDDING_PROVIDER: local
+    volumes:
+      - ./tests:/app/tests:ro
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["pytest", "-q", "tests"]
+
+volumes:
+  kg-data:
