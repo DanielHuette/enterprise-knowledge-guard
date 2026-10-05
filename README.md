@@ -1,5 +1,7 @@
 # Enterprise Knowledge Guard
 
+**Projektseite mit Betriebsanleitung: https://enterpriseknowledge.speedofthespirit.dev**
+
 Ein internes Frage-und-Antwort-System auf Firmenunterlagen, bei dem die
 Zugriffsrechte **in der Datenbank** liegen und nicht im Prompt.
 
