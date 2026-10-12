@@ -24,6 +24,7 @@ jobs:
       OWNER_DATABASE_URL: postgresql://kg_owner:kg_owner_pw@localhost:5433/knowledge_guard
       TOKEN_SECRET: ci-only-token-secret
       PGPASSWORD: kg_owner_pw
+      KG_APP_USER: kg_app
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
