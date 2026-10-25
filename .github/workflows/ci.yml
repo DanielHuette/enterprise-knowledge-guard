@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: kg_owner
+          POSTGRES_PASSWORD: kg_owner_pw
+          POSTGRES_DB: knowledge_guard
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U kg_owner -d knowledge_guard"
+          --health-interval 3s --health-timeout 3s --health-retries 30
+    env:
+      APP_DATABASE_URL: postgresql://kg_app:kg_app_pw@localhost:5433/knowledge_guard
+      OWNER_DATABASE_URL: postgresql://kg_owner:kg_owner_pw@localhost:5433/knowledge_guard
+      TOKEN_SECRET: ci-only-token-secret
+      PGPASSWORD: kg_owner_pw
+      KG_APP_USER: kg_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install locked dependencies
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install --no-deps -e .
+      - name: Database roles and schema, as the container entrypoint would
+        run: |
+          psql -h localhost -p 5433 -U kg_owner -d knowledge_guard -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE kg_app LOGIN PASSWORD 'kg_app_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS" \
+            -c "GRANT CONNECT ON DATABASE knowledge_guard TO kg_app"
+          for file in db/0[1-9]*.sql; do
+            psql -h localhost -p 5433 -U kg_owner -d knowledge_guard -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+      - name: ruff
+        run: |
+          ruff format --check src tests scripts ui
+          ruff check src tests scripts ui
+      - name: mypy
+        run: mypy --strict src scripts
+      - name: pytest against PostgreSQL with pgvector
+        run: pytest

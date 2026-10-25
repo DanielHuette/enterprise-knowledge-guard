@@ -1,0 +1,89 @@
+# Enterprise Knowledge Guard
+#
+#   docker compose up --build        -> user interface on http://localhost:8501
+#   docker compose run --rm tests    -> test suite against the running database
+#
+# Runs without any key: without a language model the system answers extractively.
+# Access control is unaffected by that.
+
+name: knowledge-guard
+
+x-database-urls: &database-urls
+  APP_DATABASE_URL: postgresql://kg_app:${DB_APP_PASSWORD:-kg_app_pw}@db:5432/knowledge_guard
+  OWNER_DATABASE_URL: postgresql://kg_owner:${DB_OWNER_PASSWORD:-kg_owner_pw}@db:5432/knowledge_guard
+  TOKEN_SECRET: ${TOKEN_SECRET:-demo-only-change-me}
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      # This role owns the tables and runs the setup; the service connects as kg_app.
+      POSTGRES_USER: kg_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:-kg_owner_pw}
+      POSTGRES_DB: knowledge_guard
+      KG_APP_USER: kg_app
+      KG_APP_PASSWORD: ${DB_APP_PASSWORD:-kg_app_pw}
+    volumes:
+      # Files in db/ run once, in alphabetical order, on the first start.
+      - ./db:/docker-entrypoint-initdb.d:ro
+      - kg-data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kg_owner -d knowledge_guard"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      <<: *database-urls
+      SEED_ON_START: "true"
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-auto}
+      LLM_PROVIDER: ${LLM_PROVIDER:-auto}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      SHOW_BLOCKED_COUNT: ${SHOW_BLOCKED_COUNT:-true}
+      TOP_K: ${TOP_K:-5}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  ui:
+    build: ./ui
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${UI_PORT:-8501}:8501"
+    restart: unless-stopped
+
+  # Own profile: not started by a plain `docker compose up`.
+  tests:
+    build:
+      context: .
+      target: test
+    profiles: ["test"]
+    environment:
+      <<: *database-urls
+      SEED_ON_START: "false"
+      # The suite checks access rights, not wording; it runs without a model and at no cost.
+      LLM_PROVIDER: none
+      EMBEDDING_PROVIDER: local
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  kg-data:

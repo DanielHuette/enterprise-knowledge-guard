@@ -1,0 +1,44 @@
+{
+ "run_at": "2026-10-13",
+ "postgres": "PostgreSQL 16.15 with pgvector 0.8.1",
+ "tests": {
+  "total": 149,
+  "passed": 149,
+  "coverage_percent": 96,
+  "by_file": {
+   "integration/test_access_rights.py": 42,
+   "integration/test_api.py": 16,
+   "integration/test_approval_flow.py": 13,
+   "integration/test_row_level_security.py": 11,
+   "integration/test_tools.py": 11,
+   "integration/test_prompt_injection.py": 4,
+   "unit/test_auth_and_config.py": 17,
+   "unit/test_agent_routing.py": 11,
+   "unit/test_llm_and_upstream.py": 10,
+   "unit/test_model_paths.py": 8,
+   "unit/test_embeddings.py": 6
+  }
+ },
+ "bench": [
+  {
+   "chunks": 5015,
+   "queries": 20,
+   "exact_ms": 29.8,
+   "index40_ms": 1.05,
+   "index40_recall": 100.0,
+   "index200_ms": 2.37,
+   "index200_recall": 100.0,
+   "filtered_ms": 2.33
+  },
+  {
+   "chunks": 50015,
+   "queries": 20,
+   "exact_ms": 518.51,
+   "index40_ms": 4.96,
+   "index40_recall": 96.0,
+   "index200_ms": 4.28,
+   "index200_recall": 99.0,
+   "filtered_ms": 2.9
+  }
+ ]
+}
